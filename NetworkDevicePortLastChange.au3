@@ -13,16 +13,15 @@
 
 	TODO
 	- GUI (Ip + SNMP Pulic + SNMP Version) DONE
-	- Ping test before SNMP
+	- Ping test before SNMP    DONE
 	- timeout....   <----------
 	- Print Result
 	- validate cenas (resultados......
-	- save last used value
+	- save last used values (regedit)
 
 #ce ----------------------------------------------------------------------------
 
 ; Script Start - Add your code below here
-
 #include <File.au3>
 #include <Array.au3>
 #include <MsgBoxConstants.au3>
@@ -35,22 +34,17 @@
 #include <StaticConstants.au3>
 #include <WindowsConstants.au3>
 #include <GUIButton.au3>
-
-Global $interDesc [0]
-Global $interStatus [0]
-Global $interLastCh [0]
+#include <Math.au3>
 
 Global $deviceUptime = 0
 
 Global $wmiLocator
 Global $wmiService
 
-;$strTargetSnmpDevice = "192.168.249.253" ; Device IP Address
-
-Global $dest_IP = "172.21.1.110" 			; Destination Address (change it)
+Global $dest_IP = "172.21.1.110" 			; Destination Address
 Global $Port = 161 							; UDP 161  = SNMP port
 Global $SNMP_Version = 2					; SNMP v2c (1 for SNMP v1)
-Global $SNMP_Community = "Public"			; SNMPString(Community) (change it)
+Global $SNMP_Community = "Public"			; SNMPString(Community)
 Global $SNMP_ReqID = 1
 Global $SNMP_Command
 Global $Start = 1
@@ -64,21 +58,18 @@ GUIInterface()
 
 
 Func GUIInterface()
-
 	#Region ### START Koda GUI section ### Form=
 	$Form1 = GUICreate("Switch Last Port Change", 436, 492, 192, 124)
 	$Label1 = GUICtrlCreateLabel("IP: ", 88, 56, 20, 17)
-	$Label2 = GUICtrlCreateLabel("SNMP Version:", 32, 88, 76, 17)
+	$Label2 = GUICtrlCreateLabel("SNMP Version:", 32, 84, 76, 17)
 	$Label3 = GUICtrlCreateLabel("SNMP Community: ", 16, 112, 95, 17)
-	$Input1 = GUICtrlCreateInput("172.21.1.112", 120, 56, 121, 21)
-	GUICtrlSetLimit(-1, 13)
-	;$Combo1 = GUICtrlCreateCombo(" SNMP v1| SNMP v2c", 120, 88, 121, 25, BitOR($CBS_DROPDOWN,$CBS_AUTOHSCROLL))
+	$Input1 = GUICtrlCreateInput("172.21.1.110", 120, 56, 121, 21)
+	GUICtrlSetLimit(-1, 15)
 
-	$ComboBox = GUICtrlCreateCombo('SNMP v2c', 120, 88, 121, 25)
+	$ComboBox = GUICtrlCreateCombo('SNMP v2c', 120, 84, 121, 25)
 	GUICtrlSetData($ComboBox, "SNMP v1")
-;	_GUICtrlComboBox_SelectString($ComboBox, "SNMP v2c")
 
-	$Input2 = GUICtrlCreateInput("Public", 120, 112, 121, 21)
+	$Input2 = GUICtrlCreateInput($SNMP_Community, 120, 112, 121, 21)
 	$Button1 = GUICtrlCreateButton("GO", 264, 160, 145, 41)
 	$ButtonPing = GUICtrlCreateButton("Ping", 264, 56, 145, 21)
 	$Checkbox1 = GUICtrlCreateCheckbox("Debug", 16, 192, 89, 17)
@@ -97,6 +88,11 @@ Func GUIInterface()
 		Switch $nMsg
 			Case $Button1
 				Local $input_IP = GUICtrlRead($Input1)
+				    If GUICtrlRead($Checkbox1) = 1 Then
+						$debug = True
+					Else
+						$dedug = false
+					EndIf
 
 				if (_IsIP4($input_IP)) Then
 					$dest_IP = $input_IP
@@ -105,7 +101,7 @@ Func GUIInterface()
 					ContinueCase
 				EndIf
 				if ($debug) Then
-						_writeLog(GUICtrlRead($ComboBox))
+						_writeLog($input_IP & " will be used")
 				EndIf
 
 				; SNMP v2c (1 for SNMP v1)
@@ -115,9 +111,7 @@ Func GUIInterface()
 					$SNMP_Version = "1"
 				endif
 				if ($debug) Then
-					_writeLog($input_IP)
-					_writeLog(_IsIP4($input_IP))
-					_writeLog($SNMP_Version)
+					_writeLog("SNMP Version: " & $SNMP_Version)
 				EndIf
 
 				$SNMP_Community = GUICtrlRead($Input2)			; SNMPString(Community) (change it)
@@ -125,12 +119,18 @@ Func GUIInterface()
 					MsgBox(0, 1, "SNMP Community can't be empty")
 					ContinueCase
 				EndIf
+				if ($debug) Then
+					_writeLog("SNMP Community: " & $SNMP_Community)
+				EndIf
 
+				if ($debug) Then
+					_writeLog("Testing connectivity...")
+				EndIf
 				$iPing = PingTest($input_IP)
 				If $iPing Then
 					DoIt()
 				Else
-					MsgBox(0, 1, "can't reach device")
+					MsgBox(0, 1, "Can't reach device")
 					ContinueCase
 				EndIf
 			Case $ButtonPing
@@ -159,7 +159,6 @@ Func GUIInterface()
 		EndSwitch
 	WEnd
 
-
 EndFunc   ;==>GUIInterface
 
 
@@ -167,27 +166,72 @@ Func DoIt()
 	UDPStartUp()
 	$Socket = UDPopen($dest_IP, $Port)
 
-	Global $SNMP_OID = "1.3.6.1.2.1.1.3.0"     ;  Equipment UPTIME
-	;$SNMP_Command = _SNMPBuildPacket($SNMP_OID, $SNMP_Community,$SNMP_Version, $SNMP_ReqID, "A0")
+	# CLEAR VARIABLES USED
+	Local $interDesc [0]
+	Local $interStatus [0]
+	Local $interLastCh [0]
+
+	Global $SNMP_OID = "1.3.6.1.2.1.1.3.0"     ;  Device UPTIME
 	$SNMP_Command = _SNMPBuildPacket($SNMP_OID, $SNMP_Community,$SNMP_Version, $SNMP_ReqID, "A0")
 	UDPSend($Socket, $SNMP_Command)
 	_StartListener()
 	sleep (200)
-
-	;_ArrayDisplay($SNMP_Util, "GetRequest 1x OID")
-	;_ArrayDisplay($SNMP_Received, "$SNMP_Received - EXAMPLE")
 	$deviceUptime = $SNMP_Util[1][1]*100
+	if ($debug) Then
+		_writeLog("deviceUptime: " & $deviceUptime)
+	EndIf
 
-	$snmpR = SNMPReq("1.3.6.1.2.1.2.2.1.2")   ;  Interfaces DESC
-	;msgbox(0,'', UBound($snmpR))
-	For $i = 0 to UBound($snmpR, 1) - 1
-	   if (StringInStr($snmpR[$i][0], "1.3.6.1.2.1.2.2.1.2") >= 1) Then
-		  _ArrayAdd($interDesc, $snmpR[$i][1])
+	Global $SNMP_OID = "1.3.6.1.2.1.1.5.0"     ;  Device HOSTNAME
+	$SNMP_Command = _SNMPBuildPacket($SNMP_OID, $SNMP_Community,$SNMP_Version, $SNMP_ReqID, "A0")
+	UDPSend($Socket, $SNMP_Command)
+	_StartListener()
+	sleep (200)
+	$deviceHostname = $SNMP_Util[1][1]
+	if ($debug) Then
+		_writeLog("deviceHostname: " & $deviceHostname)
+	EndIf
+
+
+	;;;  Description
+	if ($debug) Then
+		_writeLog("getting descriptions...")
+	EndIf
+	Global $SNMP_OID = "1.3.6.1.2.1.2.2.1.2"
+	$SNMP_Command = _SNMPBuildPacket($SNMP_OID, $SNMP_Community,$SNMP_Version, $SNMP_ReqID, "A5", "40")
+	UDPSend($Socket, $SNMP_Command)
+	_StartListener()
+	sleep (200)
+
+	For $i = 0 to UBound($SNMP_Util, 1) - 1
+	   if (StringInStr($SNMP_Util[$i][0], "1.3.6.1.2.1.2.2.1.2") >= 1) Then
+		  _ArrayAdd($interDesc, $SNMP_Util[$i][1])
 	   EndIf
 	Next
 
-	;_ArrayDisplay($interDesc, "$interDesc")
 
+	$nextOID = ($SNMP_Util[UBound($SNMP_Util)-1][0])
+	if (StringInStr($nextOID, "1.3.6.1.2.1.2.2.1.2") >= 1) Then
+		if ($debug) Then
+			_writeLog("getting descriptions... (cycle2)")
+		EndIf
+		$SNMP_OID = $nextOID
+		$SNMP_Command = _SNMPBuildPacket($SNMP_OID, $SNMP_Community,$SNMP_Version, $SNMP_ReqID, "A5")
+		UDPSend($Socket, $SNMP_Command)
+		_StartListener()
+		sleep (200)
+
+		For $i = 0 to UBound($SNMP_Util, 1) - 1
+		   if (StringInStr($SNMP_Util[$i][0], "1.3.6.1.2.1.2.2.1.2") >= 1) Then
+			  _ArrayAdd($interDesc, $SNMP_Util[$i][1])
+		   EndIf
+		Next
+	endif
+	$ports1 = UBound($interDesc)
+
+
+	if ($debug) Then
+		_writeLog("getting interface status...")
+	EndIf
 	$snmpR = SNMPReq("1.3.6.1.2.1.2.2.1.8")   ;  Interfaces STATUS    1-up, 2-down, 3-testing
 	For $i = 0 to UBound($snmpR, 1) - 1
 	   if (StringInStr($snmpR[$i][0], "1.3.6.1.2.1.2.2.1.8") >= 1) Then
@@ -201,18 +245,15 @@ Func DoIt()
 			   Case Else
 				   $status = "N/D"
 			EndSwitch
-
-;if (($snmpR[$i][1]) == "1") Then
-;			$status = "Up"
-;		 Else
-;			$status = "Down"
-;		  EndIf
 		  _ArrayAdd($interStatus, $status)
 	   EndIf
 	Next
+	$ports2 = UBound($interStatus)
 
+	if ($debug) Then
+		_writeLog("getting interface last change...")
+	EndIf
 	$snmpR = SNMPReq("1.3.6.1.2.1.2.2.1.9")   ;  Interfaces LAST CHANGE
-	;_ArrayDisplay($snmpR, "last change")
 	For $i = 0 to UBound($snmpR, 1) - 1
 	   if (StringInStr($snmpR[$i][0], "1.3.6.1.2.1.2.2.1.9") >= 1) Then
 		  $values = StringSplit($snmpR[$i][1], " ")
@@ -221,9 +262,13 @@ Func DoIt()
 	   EndIf
 	Next
 
-	$ports = UBound($snmpR)-1
+	$ports3 = UBound($interLastCh)
+	$ports = _Min($ports1,_Min($ports2,$ports3))
 
-	Global $interfaces[$ports][3]
+	if ($debug) Then
+		_writeLog("Compiling Information!! Clank clank")
+	EndIf
+	Local $interfaces[$ports][3]
 
 	For $i = 0 to $ports-1
 		$interfaces[$i][0] = $interDesc[$i]
@@ -231,13 +276,39 @@ Func DoIt()
 		$interfaces[$i][2] = $interLastCh[$i]
 	Next
 
-	_ArrayDisplay($interfaces, "Device uptime: " & timeticks2Days($deviceUptime) & "d","",64,Default, "Interface|Status|Last Change")
+	_ArrayDisplay($interfaces, $deviceHostname & " uptime: " & timeticks2Days($deviceUptime) & "d","",64,Default, "Interface|Status|Last Change")
+EndFunc
+
+#####################################
+Func SNMPReq ($OID)
+   Global $SNMP_OID = $OID
+   $SNMP_Command = _SNMPBuildPacket($SNMP_OID, $SNMP_Community, $SNMP_Version, $SNMP_ReqID, "A5", "50")
+   UDPSend($Socket, $SNMP_Command)
+   _StartListener()
+   sleep (300)
+   Return $SNMP_Util
+EndFunc
+
+Func _StartListener()
+	If $Start = 1 Then
+		#Local $srcv = ""
+		While (1)
+			$srcv = UDPRecv($Socket, 10*1024)
+			Sleep(100)
+			If ($srcv <> "") Then
+				$result = _ShowSNMPReceived ($srcv)
+				;ConsoleWrite($srcv &@CRLF)
+				ExitLoop
+			EndIf
+		 sleep(100)
+		 WEnd
+		; _ArrayDisplay($result, "RTFM")
+	EndIf
 EndFunc
 
 Func timeticks2Days($tticks)
     Return (floor($tticks/8640000))
 EndFunc
-
 
 Func getText($text)
 	$ini = StringInStr($text, chr(34))
@@ -245,58 +316,6 @@ Func getText($text)
 	$ini = StringInStr($text, chr(34))
 	$text = StringLeft($text, $ini-1)
 	Return $text
-EndFunc
-
-
-Func SNMPReq ($OID)
-	  ;GetBulk (ifTable - ifDescr) 32 values returned
-   Global $SNMP_OID = $OID
-   $SNMP_Command = _SNMPBuildPacket($SNMP_OID, $SNMP_Community,$SNMP_Version, $SNMP_ReqID, "A5", "20")
-   UDPSend($Socket, $SNMP_Command)
-   _StartListener()
-   sleep (200)
-   ;_ArrayDisplay($SNMP_Util, "GetBulk")
-   Return $SNMP_Util
-EndFunc
-
-Func parseSNMPResp($array)
-   Local $arrayRes[0]
-   For $i = 0 to UBound($array, 1) - 1
-	  if (StringInStr($array[$i][0], "1.3.6.1.2.1.2.2.1.2.101") >= 1) Then
-		 _ArrayAdd($arrayRes, $array[$i][1])
-		 ;msgbox(0,'', $array[$i][0] & "  " & $array[$i][1] )
-	  EndIf
-   Next
-   return $array
-EndFunc
-
-
-Func PingTest($host)
-    ; Ping the AutoIt website with a timeout of 250ms.
-    Local $iPing = Ping($host, 750)
-
-;If $iPing Then ; If a value greater than 0 was returned then display the following message.
-;        MsgBox($MB_SYSTEMMODAL, "", "The roundtrip-time took: " & $iPing & "ms.")
-;    Else
-;        MsgBox($MB_SYSTEMMODAL, "", "An error occurred with @error value of: " & @error)
-;	 EndIf
-	 Return $iPing
-EndFunc
-
-
-Func _StartListener()
-	If $Start = 1 Then
-		While (1)
-			$srcv = UDPRecv($Socket, 4096)
-			If ($srcv <> "") Then
-				$result = _ShowSNMPReceived ($srcv)
-				ConsoleWrite($srcv &@CRLF)
-				ExitLoop
-			EndIf
-		 sleep(100)
-		 WEnd
-		 ;_ArrayDisplay($result)
-	EndIf
 EndFunc
 
 Func OnAutoItExit()
@@ -309,6 +328,11 @@ Func _IsIP4($sIP4)
     ; Return StringRegExp($sIP4, '^(?:(?:2(?:[0-4][\d|5[0-5])|[0-1]?\d{1,2})\.){3}(?:(?:2(?:[0-4]\d|5[0-5])|[0-1]?\d{1,2}))$')
 EndFunc
 
+Func PingTest($host)
+    ; Ping the AutoIt website with a timeout of 250ms.
+    Local $iPing = Ping($host, 750)
+	Return $iPing
+EndFunc
 
 Func _writeLog($text)
 	GUICtrlSetData($idMyedit, $text & @CRLF, 1)
@@ -319,7 +343,6 @@ EndFunc   ;==>_writeLog
 ;~    14/03/2018 17:25:42 (177 ms) : 1.3.6.1.2.1.2.2.1.2.10101 = "GigabitEthernet0/1" [ASN_OCTET_STR]
 ;~    14/03/2018 17:25:43 (1946 ms) : 1.3.6.1.2.1.2.2.1.8.10126 = "2" [ASN_INTEGER]
 ;~    14/03/2018 17:25:44 (2116 ms) : 1.3.6.1.2.1.2.2.1.9.10113 = "850452656" [ASN_TIMETICKS]
-
 
 ;~ 1.3.6.1.2.1.2.2.1.1 - ifIndex
 ;~ 1.3.6.1.2.1.2.2.1.2 - ifDescr
@@ -343,5 +366,4 @@ EndFunc   ;==>_writeLog
 ;~ 1.3.6.1.2.1.2.2.1.20 - ifOutErrors
 ;~ 1.3.6.1.2.1.2.2.1.21 - ifOutQLen
 ;~ 1.3.6.1.2.1.2.2.1.22 - ifSpecific
-
 ;~ */

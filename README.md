@@ -8,12 +8,12 @@ I wrote this, to check the Switch ports, unused a long time, a keep network rack
 
 10/sept/2019
 Bug Fixes
-- IP field correct
+- IP field size
 - Clean states before rerun
 - Properly work in devices up to 84 ports
-- hostname added to result
+- device hostname added to results
 - Clean up code
 
 ToDo:
-- Test SNMP community /version
+- Test SNMP community/version
 - make persistent values

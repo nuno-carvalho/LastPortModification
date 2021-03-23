@@ -1,5 +1,5 @@
 # LastPortModification
-Check when does a port switch (or other network device) change is port status
+Check when does a port switch (or other network device) change port/interface status
 
 Based on SNMP queries, you can check when a port in a network device, change his status.
 
